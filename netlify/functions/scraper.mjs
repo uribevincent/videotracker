@@ -107,7 +107,7 @@ function absoluteUrl(value) {
 }
 
 // Extraction ClicknUpload depuis une publication.
-async function getClicknuploadLink(pageUrl) {
+export async function getClicknuploadLink(pageUrl) {
   if (!allowedUrl(pageUrl)) return null;
 
   try {
