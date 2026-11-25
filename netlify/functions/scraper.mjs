@@ -11,14 +11,58 @@ const parser = new Parser({
 
 const FEED_URL = "https://rmz.cr/feed/s";
 
-function normalizeTitle(title) {
+function cleanTitle(title) {
   return title
+    .replace(/^\s*(?:\[[^\]]*\]\s*)+/, "")
+    .trim();
+}
+
+function normalize(value) {
+  return value
     .toLowerCase()
-    .replace(/\b(rmteam|720p|1080p|2160p|x265|x264|hevc|h264|h265)\b/gi, " ")
-    .replace(/\[[^\]]*\]|\([^)]*\)/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function parseEpisode(title) {
+  const cleaned = cleanTitle(title);
+
+  const match = cleaned.match(
+    /^(.+?)\s+S(\d{1,2})E(\d{1,3})\b(.*)$/i
+  );
+
+  if (!match) return null;
+
+  const seriesTitle = match[1].trim();
+  const season = Number(match[2]);
+  const episode = Number(match[3]);
+
+  const remainder = match[4]
+    .replace(
+      /\b(480p|720p|1080p|2160p|WEB-DL|WEBRip|BluRay|HEVC|x265|x264|H264|H265|RMTeam|AAC|DDP5?\.?1|Proper|REPACK)\b.*$/i,
+      ""
+    )
     .replace(/[._-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  const seriesKey = normalize(seriesTitle);
+
+  const episodeKey =
+    `${seriesKey}:s${String(season).padStart(2, "0")}` +
+    `e${String(episode).padStart(2, "0")}`;
+
+  return {
+    seriesId: seriesKey,
+    seriesKey,
+    seriesTitle,
+    season,
+    episode,
+    episodeTitle: remainder || `Épisode ${episode}`,
+    episodeKey
+  };
 }
 
 function getQuality(title) {
@@ -28,28 +72,29 @@ function getQuality(title) {
     value.includes("720p") &&
     (value.includes("x265") || value.includes("hevc"))
   ) {
-    return 1;
+    return {
+      rank: 1,
+      label: "720p x265"
+    };
   }
 
   if (value.includes("1080p")) {
-    return 2;
+    return {
+      rank: 2,
+      label: "1080p"
+    };
   }
 
-  return 99;
+  return null;
 }
 
 function isRMTeam(title) {
   return /rmteam/i.test(title);
 }
 
-
 function isAllowedPublicationUrl(value) {
-  if (typeof value !== "string" || !value.trim()) {
-    return false;
-  }
-
   try {
-    const url = new URL(value.trim());
+    const url = new URL(value);
 
     return (
       url.protocol === "https:" &&
@@ -60,7 +105,6 @@ function isAllowedPublicationUrl(value) {
     return false;
   }
 }
-
 
 async function getClicknuploadLink(pageUrl) {
   if (!isAllowedPublicationUrl(pageUrl)) {
@@ -89,13 +133,7 @@ async function getClicknuploadLink(pageUrl) {
       if (!href) return;
 
       try {
-        let url;
-
-try {
-  url = new URL(href, pageUrl);
-} catch {
-  return;
-}
+        const url = new URL(href, pageUrl);
 
         if (
           url.protocol === "https:" &&
@@ -104,13 +142,17 @@ try {
           result = url.href;
         }
       } catch {
-        // Ignore invalid links
+        // Ignore invalid URLs
       }
     });
 
     return result;
   } catch (error) {
-    console.error("Publication page error:", error.message);
+    console.error(
+      "Publication page error:",
+      error.message
+    );
+
     return null;
   }
 }
@@ -118,50 +160,63 @@ try {
 export async function getPublications() {
   const feed = await parser.parseURL(FEED_URL);
 
-  const candidates = (feed.items || [])
-    .map((item) => {
-      const title = item.title || "";
+  const candidates = [];
 
-      return {
-        id: String(item.guid || item.link || title),
-        title,
-        sourceUrl: item.link || "",
-        publishedAt: item.isoDate || item.pubDate || null,
-        quality: getQuality(title),
-        contentKey: normalizeTitle(title)
-      };
-    })
-    .filter((item) =>
-      isRMTeam(item.title) &&
-      item.sourceUrl &&
-      isAllowedPublicationUrl(item.sourceUrl) &&
-      item.quality !== 99
-    );
+  for (const item of feed.items || []) {
+    const title = item.title || "";
 
-  // Regroupe les versions d'un même contenu.
-  const groups = new Map();
+    if (!isRMTeam(title)) continue;
+
+    const parsed = parseEpisode(title);
+    const quality = getQuality(title);
+    const sourceUrl = item.link || "";
+
+    if (
+      !parsed ||
+      !quality ||
+      !sourceUrl ||
+      !isAllowedPublicationUrl(sourceUrl)
+    ) {
+      continue;
+    }
+
+    candidates.push({
+      ...parsed,
+      id: parsed.episodeKey,
+      title,
+      quality: quality.label,
+      qualityRank: quality.rank,
+      publishedAt: item.isoDate || item.pubDate || null,
+      sourceUrl,
+      clicknuploadUrl: null
+    });
+  }
+
+  // Une seule version par épisode.
+  const episodes = new Map();
 
   for (const item of candidates) {
-    const current = groups.get(item.contentKey);
+    const current = episodes.get(item.episodeKey);
 
-    if (!current || item.quality < current.quality) {
-      groups.set(item.contentKey, item);
+    if (
+      !current ||
+      item.qualityRank < current.qualityRank
+    ) {
+      episodes.set(item.episodeKey, item);
     }
   }
 
-  const selected = [...groups.values()];
+  const selected = [...episodes.values()];
 
-  // Limite les requêtes simultanées vers les pages source.
+  // Recherche des liens par lots.
   const enriched = [];
 
   for (let i = 0; i < selected.length; i += 3) {
     const batch = selected.slice(i, i + 3);
 
     const results = await Promise.all(
-      batch.map(async (item) => ({
+      batch.map(async item => ({
         ...item,
-        qualityLabel:
-          item.quality === 1 ? "720p x265" : "1080p",
         clicknuploadUrl:
           await getClicknuploadLink(item.sourceUrl)
       }))
