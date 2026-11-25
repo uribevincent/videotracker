@@ -35,19 +35,32 @@ const emptyState: State = {
   lastRefresh: null
 };
 
+
 async function api(action: string, data?: object) {
+  const isRead = action === "state";
+
   const response = await fetch(
     `/.netlify/functions/api?action=${action}`,
     {
-      method: data ? "POST" : "GET",
-      headers: data
-        ? { "Content-Type": "application/json" }
-        : {},
-      body: data ? JSON.stringify(data) : undefined
+      method: isRead ? "GET" : "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: isRead ? undefined : JSON.stringify(data || {})
     }
   );
 
-  const result = await response.json();
+  const text = await response.text();
+
+  let result;
+
+  try {
+    result = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Réponse serveur invalide (${response.status}): ${text.slice(0, 150)}`
+    );
+  }
 
   if (!response.ok) {
     throw new Error(result.error || "Erreur API");
@@ -55,6 +68,7 @@ async function api(action: string, data?: object) {
 
   return result;
 }
+
 
 export default function App() {
   const [state, setState] = useState<State>(emptyState);
