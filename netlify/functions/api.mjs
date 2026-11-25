@@ -152,84 +152,32 @@ function mergeSeries(oldSeries, newSeries) {
 
 
 async function repairSeriesLinks(seriesList) {
-  const updated = seriesList.map(series => ({
-    ...series,
-    seasons: (series.seasons || []).map(season => ({
-      ...season,
-      episodes: [...(season.episodes || [])]
-    }))
-  }));
+  const episodes = [];
 
-  const tasks = [];
-
-  for (let s = 0; s < updated.length; s++) {
-    for (let se = 0; se < updated[s].seasons.length; se++) {
-      for (
-        let e = 0;
-        e < updated[s].seasons[se].episodes.length;
-        e++
-      ) {
-        const episode =
-          updated[s].seasons[se].episodes[e];
-
-        if (!episode.clicknuploadUrl && episode.sourceUrl) {
-          tasks.push({
-            episode,
-            update(link) {
-              if (link) {
-                updated[s].seasons[se].episodes[e] = {
-                  ...episode,
-                  clicknuploadUrl: link
-                };
-              }
-            }
-          });
+  for (const series of seriesList) {
+    for (const season of series.seasons || []) {
+      for (const episode of season.episodes || []) {
+        if (episode.sourceUrl) {
+          episodes.push(episode);
         }
       }
     }
   }
 
-  let repaired = 0;
-  let unavailable = 0;
-
-  // Trois requêtes simultanées maximum.
-  for (let i = 0; i < tasks.length; i += 3) {
-    const batch = tasks.slice(i, i + 3);
+  // Trois recherches simultanées maximum.
+  for (let i = 0; i < episodes.length; i += 3) {
+    const batch = episodes.slice(i, i + 3);
 
     await Promise.all(
-      batch.map(async task => {
-        try {
-          const link = await getClicknuploadLink(
-            task.episode.sourceUrl
-          );
-
-          if (link) {
-            task.update(link);
-            repaired++;
-          } else {
-            unavailable++;
-          }
-        } catch (error) {
-          console.error(
-            "Repair error:",
-            task.episode.title,
-            error.message
-          );
-
-          unavailable++;
-        }
+      batch.map(async episode => {
+        episode.clicknuploadUrl =
+          await getClicknuploadLink(episode.sourceUrl);
       })
     );
   }
 
-  return {
-    series: updated,
-    attempted: tasks.length,
-    repaired,
-    unavailable
-  };
+  return seriesList;
 }
-
 
 export default async function handler(request) {
   try {
@@ -250,7 +198,20 @@ export default async function handler(request) {
     }
 
     const state = await readState();
+// REPAIR LINKS
+if (action === "repair-links") {
+  state.followed = await repairSeriesLinks(
+    state.followed
+  );
 
+  state.newItems = await repairSeriesLinks(
+    state.newItems
+  );
+
+  await saveState(state);
+
+  return json(state);
+}
     // REFRESH
     if (action === "refresh") {
       const publications = await getPublications();
