@@ -1,331 +1,81 @@
 
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  color: #edf2f7;
-  background: #101827;
-  font-synthesis: none;
+.series-card {
+  align-items: flex-start;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #101827;
-}
-
-button, a {
-  font: inherit;
-  -webkit-tap-highlight-color: transparent;
-}
-
-button {
+.series-toggle {
+  border: 0;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
-.app {
-  max-width: 900px;
-  margin: auto;
-  padding: 28px 22px;
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
-}
-
-.header {
+.series-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 28px;
+  gap: 12px;
+  cursor: pointer;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 13px;
+.series-heading h2 {
+  margin: 0 0 8px;
 }
 
-.brand-icon {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: #243d60;
-  color: #75b5ff;
+.season-list {
+  margin-top: 18px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
 }
 
-h1 {
-  font-size: 21px;
-  margin: 0;
+.season {
+  padding-top: 14px;
 }
 
-.brand p {
-  margin: 4px 0 0;
-  color: #93a4b8;
-  font-size: 13px;
-}
-
-.refresh {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 13px 18px;
-  border: 0;
-  border-radius: 12px;
-  color: white;
-  background: #2563eb;
-  font-weight: 650;
-}
-
-.refresh:disabled {
-  opacity: .6;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-bottom: 28px;
-}
-
-.stat-card {
-  background: #1b293b;
-  border: 1px solid #2b3b50;
-  border-radius: 16px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  color: #83baff;
-}
-
-.stat-card strong {
-  color: white;
-  font-size: 30px;
-}
-
-.stat-card span {
-  color: #9aacc0;
-  font-size: 13px;
-}
-
-.tabs {
-  display: flex;
-  gap: 10px;
-  border-bottom: 1px solid #29394d;
-  margin-bottom: 15px;
-}
-
-.tabs button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: transparent;
-  color: #93a4b8;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  padding: 15px 18px;
-  font-weight: 600;
-}
-
-.tabs button.active {
-  color: #75b5ff;
-  border-bottom-color: #3b82f6;
-}
-
-.tabs button span {
-  background: #29394d;
-  padding: 3px 8px;
-  border-radius: 20px;
-  font-size: 12px;
-}
-
-.last-refresh {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #8294aa;
-  font-size: 12px;
-  margin: 17px 0;
-}
-
-.video-list {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-
-.video-card {
-  display: flex;
-  gap: 15px;
-  padding: 19px;
-  background: #1b293b;
-  border: 1px solid #2b3b50;
-  border-radius: 16px;
-}
-
-.video-icon {
-  flex-shrink: 0;
-  width: 49px;
-  height: 49px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  color: #75b5ff;
-  background: #263d5b;
-}
-
-.video-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.video-content h2 {
-  font-size: 15px;
-  line-height: 1.5;
-  margin: 0 0 10px;
-  overflow-wrap: anywhere;
-}
-
-.video-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  color: #94a6ba;
-  font-size: 12px;
-}
-
-.quality {
-  background: #164b39;
-  color: #65e2aa;
-  padding: 5px 9px;
-  border-radius: 6px;
-  font-weight: 650;
-}
-
-.video-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.download-link,
-.source-link,
-.follow-button,
-.remove-button {
-  min-height: 42px;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  border-radius: 10px;
-  padding: 10px 14px;
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.download-link {
-  color: #8dc1ff;
-  background: #263d5b;
-}
-
-.source-link {
-  color: #c1d1e5;
-  background: #29394d;
-}
-
-.follow-button {
-  border: 0;
-  color: white;
-  background: #2563eb;
-}
-
-.remove-button {
-  border: 0;
-  color: #ff9b9b;
-  background: #492b37;
-}
-
-.followed-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #65dba4;
-  font-size: 12px;
-  margin-top: 12px;
-}
-
-.empty {
-  text-align: center;
-  padding: 70px 20px;
-  color: #8194aa;
-}
-
-.empty h2 {
-  color: #e5edf7;
-  font-size: 18px;
-}
-
-.empty p {
+.season h3 {
   font-size: 14px;
-  line-height: 1.6;
+  margin-bottom: 10px;
+  opacity: 0.75;
 }
 
-.error {
-  padding: 14px;
-  margin: 15px 0;
-  border-radius: 10px;
-  background: #4b2530;
-  color: #ffb5b5;
+.episode {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.episode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.episode-info > span {
   overflow-wrap: anywhere;
 }
 
-footer {
-  text-align: center;
-  color: #63758b;
-  font-size: 12px;
-  padding: 35px 0 0;
+.episode .video-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.spin {
-  animation: spin 1s linear infinite;
+.episode .download-link,
+.episode .source-link {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 500px) {
-  .app {
-    padding: 20px 14px;
-  }
-
-  .header {
+@media (max-width: 600px) {
+  .episode {
     align-items: flex-start;
+    flex-direction: column;
   }
 
-  .refresh {
-    padding: 12px;
-  }
-
-  .refresh span {
-    display: none;
-  }
-
-  .video-card {
-    padding: 14px;
-    gap: 11px;
-  }
-
-  .video-icon {
-    width: 40px;
-    height: 40px;
+  .episode .download-link,
+  .episode .source-link {
+    margin-top: 5px;
   }
 }
