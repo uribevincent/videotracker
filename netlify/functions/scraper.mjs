@@ -108,7 +108,7 @@ function isAllowedPublicationUrl(value) {
 
 
 
-async function getClicknuploadLink(pageUrl) {
+export async function getClicknuploadLink(pageUrl) {
   if (!isAllowedPublicationUrl(pageUrl)) {
     return null;
   }
