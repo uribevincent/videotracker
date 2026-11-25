@@ -9,108 +9,12 @@ const parser = new Parser({
   }
 });
 
-const FEED_URL = "https://rmz.cr/feed/s?limit=500";
+const BASE_URL = "https://rmz.cr";
+const FEED_URL = `${BASE_URL}/feed/s`;
+const MAX_PAGES = 20;
 
 function cleanTitle(title) {
-  return title
-    .replace(/^\s*(?:\[[^\]]*\]\s*)+/, "")
-    .trim();
-}
-
-export async function getArchivePublications(pageNumber = 1) {
-  const pageUrl = `https://rmz.cr/l/s/${pageNumber}`;
-
-  try {
-    const response = await fetch(pageUrl, {
-      headers: {
-        "User-Agent": "VideoTracker/1.0"
-      },
-      signal: AbortSignal.timeout(15000)
-    });
-
-    if (!response.ok) {
-      console.error(
-        `Archive page ${pageNumber}: HTTP ${response.status}`
-      );
-      return [];
-    }
-
-    const html = await response.text();
-    const $ = cheerio.load(html);
-
-    const publications = [];
-
-    $(".blog-post").each((_, element) => {
-      const post = $(element);
-      const link = post.find("h3 a[href^='/release/']").first();
-
-      const title = link.text().trim();
-      const href = link.attr("href");
-
-      if (!title || !href) return;
-
-      const sourceUrl = new URL(
-        href,
-        "https://rmz.cr"
-      ).href;
-
-      const parsed = parseEpisode(title);
-      const quality = getQuality(title);
-
-      if (!parsed || !quality) return;
-
-      publications.push({
-        ...parsed,
-        id: parsed.episodeKey,
-        title,
-        quality: quality.label,
-        qualityRank: quality.rank,
-        publishedAt: null,
-        sourceUrl,
-        clicknuploadUrl: null
-      });
-    });
-
-    console.log(
-      `Archives page ${pageNumber}: ${publications.length} épisodes`
-    );
-
-    return publications;
-
-  } catch (error) {
-    console.error(
-      `Archive error page ${pageNumber}:`,
-      error.message
-    );
-
-    return [];
-  }
-}
-
-export async function getArchiveHistory(pageCount = 5) {
-  const results = [];
-
-  for (let page = 1; page <= pageCount; page++) {
-    const publications = await getArchivePublications(page);
-
-    results.push(...publications);
-  }
-
-  // Élimination des doublons.
-  const unique = new Map();
-
-  for (const item of results) {
-    const previous = unique.get(item.episodeKey);
-
-    if (
-      !previous ||
-      item.qualityRank < previous.qualityRank
-    ) {
-      unique.set(item.episodeKey, item);
-    }
-  }
-
-  return [...unique.values()];
+  return title.replace(/^\s*(?:\[[^\]]*\]\s*)+/, "").trim();
 }
 
 function normalize(value) {
@@ -124,10 +28,7 @@ function normalize(value) {
 
 function parseEpisode(title) {
   const cleaned = cleanTitle(title);
-
-  const match = cleaned.match(
-    /^(.+?)\s+S(\d{1,2})E(\d{1,3})\b(.*)$/i
-  );
+  const match = cleaned.match(/^(.+?)\s+S(\d{1,2})E(\d{1,3})\b(.*)$/i);
 
   if (!match) return null;
 
@@ -168,17 +69,11 @@ function getQuality(title) {
     value.includes("720p") &&
     (value.includes("x265") || value.includes("hevc"))
   ) {
-    return {
-      rank: 1,
-      label: "720p x265"
-    };
+    return { rank: 1, label: "720p x265" };
   }
 
   if (value.includes("1080p")) {
-    return {
-      rank: 2,
-      label: "1080p"
-    };
+    return { rank: 2, label: "1080p" };
   }
 
   return null;
@@ -188,7 +83,7 @@ function isRMTeam(title) {
   return /rmteam/i.test(title);
 }
 
-function isAllowedPublicationUrl(value) {
+function allowedUrl(value) {
   try {
     const url = new URL(value);
 
@@ -202,152 +97,226 @@ function isAllowedPublicationUrl(value) {
   }
 }
 
-
-
-
-export async function getClicknuploadLink(pageUrl) {
-  if (!isAllowedPublicationUrl(pageUrl)) {
-    console.log("URL RMZ refusée:", pageUrl);
-    return null;
-  }
-
+function absoluteUrl(value) {
   try {
-    const response = await fetch(pageUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
-        "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(20000)
-    });
-
-    console.log("================================");
-    console.log("RMZ:", pageUrl);
-    console.log("HTTP:", response.status);
-    console.log("URL finale:", response.url);
-
-    if (!response.ok) {
-      console.error("Erreur HTTP RMZ:", response.status);
-      return null;
-    }
-
-    const html = await response.text();
-
-    console.log("Taille HTML:", html.length);
-
-    const $ = cheerio.load(html);
-
-    console.log(
-      "Titres ClicknUpload:",
-      $("h4.links").filter((_, el =>
-        /click\s*n\s*upload/i.test($(el).text())
-      )).length
-    );
-
-    let result = null;
-
-    // Recherche globale des liens ClicknUpload.
-    $("a[href]").each((_, element) => {
-      if (result) return;
-
-      const href = $(element).attr("href");
-      if (!href) return;
-
-      try {
-        const url = new URL(href, response.url);
-
-        if (
-          url.protocol === "https:" &&
-          /(^|\.)clicknupload\./i.test(url.hostname)
-        ) {
-          result = url.href;
-        }
-      } catch {
-        // Ignore les URL invalides.
-      }
-    });
-
-    console.log(
-      "RESULTAT CLICKNUpload:",
-      result || "AUCUN LIEN"
-    );
-
-    if (!result) {
-      console.log(
-        "Titre HTML reçu:",
-        $("title").text()
-      );
-    }
-
-    return result;
-
-  } catch (error) {
-    console.error(
-      "ERREUR SCRAPER:",
-      error.message
-    );
-
+    const url = new URL(value, BASE_URL);
+    return allowedUrl(url.href) ? url.href : null;
+  } catch {
     return null;
   }
 }
 
+// Extraction ClicknUpload depuis une publication.
+async function getClicknuploadLink(pageUrl) {
+  if (!allowedUrl(pageUrl)) return null;
 
-export async function getPublications() {
-  const feed = await parser.parseURL(FEED_URL);
+  try {
+    const response = await fetch(pageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 VideoTracker/1.0",
+        "Referer": BASE_URL
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000)
+    });
 
-  const candidates = [];
-
-  for (const item of feed.items || []) {
-    const title = item.title || "";
-
-    if (!isRMTeam(title)) continue;
-
-    const parsed = parseEpisode(title);
-    const quality = getQuality(title);
-    const sourceUrl = item.link || "";
-
-    if (
-      !parsed ||
-      !quality ||
-      !sourceUrl ||
-      !isAllowedPublicationUrl(sourceUrl)
-    ) {
-      continue;
+    if (!response.ok) {
+      console.log("Publication inaccessible:", response.status, pageUrl);
+      return null;
     }
 
-    candidates.push({
-      ...parsed,
-      id: parsed.episodeKey,
-      title,
-      quality: quality.label,
-      qualityRank: quality.rank,
-      publishedAt: item.isoDate || item.pubDate || null,
-      sourceUrl,
-      clicknuploadUrl: null
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    let result = null;
+
+    $("h4.links").each((_, heading) => {
+      if (result) return;
+
+      if (!/click\s*n\s*upload/i.test($(heading).text())) {
+        return;
+      }
+
+      const container = $(heading).parent();
+
+      container.find("a[href]").each((_, element) => {
+        const href = $(element).attr("href");
+        if (!href) return;
+
+        try {
+          const url = new URL(href, pageUrl);
+
+          if (
+            url.protocol === "https:" &&
+            /(^|\.)clicknupload\./i.test(url.hostname)
+          ) {
+            result = url.href;
+          }
+        } catch {
+          // URL invalide
+        }
+      });
     });
+
+    return result;
+  } catch (error) {
+    console.error("Erreur extraction:", error.message);
+    return null;
+  }
+}
+
+// Extraction des publications d'une page HTML.
+function extractPage(html) {
+  const $ = cheerio.load(html);
+  const items = [];
+
+  $(".blog-post").each((_, element) => {
+    const post = $(element);
+
+    const link = post.find("h3 > a").first();
+    const title = link.text().trim();
+    const sourceUrl = absoluteUrl(link.attr("href"));
+
+    if (!title || !sourceUrl || !isRMTeam(title)) return;
+
+    const dateDay = post.find(".bloglist-date .month-day").first().text().trim();
+    const dateYear = post.find(".bloglist-date .year").first().text().trim();
+
+    let publishedAt = null;
+
+    if (dateDay && dateYear) {
+      const [month, day] = dateDay.split("/");
+      publishedAt = `${dateYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    items.push({
+      title,
+      sourceUrl,
+      publishedAt
+    });
+  });
+
+  return items;
+}
+
+// Récupération des pages HTML.
+async function getHtmlPage(page) {
+  const url = page === 1
+    ? `${BASE_URL}/l/s/`
+    : `${BASE_URL}/l/s/${page}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 VideoTracker/1.0",
+      "Referer": BASE_URL
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(15000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Page ${page}: HTTP ${response.status}`);
   }
 
-  // Une seule version par épisode.
+  const html = await response.text();
+
+  if (
+    html.includes("Just a moment...") ||
+    html.includes("challenge-platform")
+  ) {
+    throw new Error(`Page ${page}: blocage Cloudflare`);
+  }
+
+  return html;
+}
+
+async function getAllPublications() {
+  const publications = new Map();
+
+  // RSS en première source.
+  try {
+    const feed = await parser.parseURL(FEED_URL);
+
+    for (const item of feed.items || []) {
+      if (!isRMTeam(item.title || "")) continue;
+
+      const sourceUrl = absoluteUrl(item.link);
+      if (!sourceUrl) continue;
+
+      publications.set(sourceUrl, {
+        title: item.title,
+        sourceUrl,
+        publishedAt: item.isoDate || item.pubDate || null
+      });
+    }
+
+    console.log("RSS:", publications.size, "publications");
+  } catch (error) {
+    console.error("Erreur RSS:", error.message);
+  }
+
+  // Pagination HTML.
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    try {
+      const html = await getHtmlPage(page);
+      const items = extractPage(html);
+
+      console.log(`Page ${page}: ${items.length} publications`);
+
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        publications.set(item.sourceUrl, item);
+      }
+
+    } catch (error) {
+      console.error("Pagination interrompue:", error.message);
+      break;
+    }
+  }
+
+  return [...publications.values()];
+}
+
+export async function getPublications() {
+  const candidates = await getAllPublications();
   const episodes = new Map();
 
   for (const item of candidates) {
-    const current = episodes.get(item.episodeKey);
+    if (!isRMTeam(item.title)) continue;
+
+    const parsed = parseEpisode(item.title);
+    const quality = getQuality(item.title);
+
+    if (!parsed || !quality) continue;
+
+    const candidate = {
+      ...parsed,
+      id: parsed.episodeKey,
+      title: item.title,
+      quality: quality.label,
+      qualityRank: quality.rank,
+      publishedAt: item.publishedAt,
+      sourceUrl: item.sourceUrl,
+      clicknuploadUrl: null
+    };
+
+    const current = episodes.get(candidate.episodeKey);
 
     if (
       !current ||
-      item.qualityRank < current.qualityRank
+      candidate.qualityRank < current.qualityRank
     ) {
-      episodes.set(item.episodeKey, item);
+      episodes.set(candidate.episodeKey, candidate);
     }
   }
 
   const selected = [...episodes.values()];
-
-  // Recherche des liens par lots.
   const enriched = [];
 
+  console.log("Épisodes uniques:", selected.length);
+
+  // Trois requêtes simultanées maximum.
   for (let i = 0; i < selected.length; i += 3) {
     const batch = selected.slice(i, i + 3);
 
@@ -361,6 +330,12 @@ export async function getPublications() {
 
     enriched.push(...results);
   }
+
+  const found = enriched.filter(item => item.clicknuploadUrl).length;
+
+  console.log(
+    `Résultat final: ${enriched.length} épisodes, ${found} liens ClicknUpload`
+  );
 
   return enriched;
 }
