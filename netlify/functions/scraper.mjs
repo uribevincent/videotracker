@@ -9,7 +9,7 @@ const parser = new Parser({
   }
 });
 
-const FEED_URL = "https://rmz.cr/feed/s?limit=200";
+const FEED_URL = "https://rmz.cr/feed/s?limit=500";
 
 function cleanTitle(title) {
   return title
