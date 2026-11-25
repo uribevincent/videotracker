@@ -126,6 +126,12 @@ export async function getClicknuploadLink(pageUrl) {
     }
 
     const html = await response.text();
+    console.log("URL:", pageUrl);
+console.log("HTTP:", response.status);
+console.log("HTML length:", html.length);
+console.log("Contains blog-post:", html.includes("blog-post"));
+console.log("Contains Cloudflare:", html.includes("Just a moment"));
+console.log("HTML preview:", html.slice(0, 300));
     const $ = cheerio.load(html);
 
     let result = null;
