@@ -17,6 +17,102 @@ function cleanTitle(title) {
     .trim();
 }
 
+export async function getArchivePublications(pageNumber = 1) {
+  const pageUrl = `https://rmz.cr/l/s/${pageNumber}`;
+
+  try {
+    const response = await fetch(pageUrl, {
+      headers: {
+        "User-Agent": "VideoTracker/1.0"
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!response.ok) {
+      console.error(
+        `Archive page ${pageNumber}: HTTP ${response.status}`
+      );
+      return [];
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const publications = [];
+
+    $(".blog-post").each((_, element) => {
+      const post = $(element);
+      const link = post.find("h3 a[href^='/release/']").first();
+
+      const title = link.text().trim();
+      const href = link.attr("href");
+
+      if (!title || !href) return;
+
+      const sourceUrl = new URL(
+        href,
+        "https://rmz.cr"
+      ).href;
+
+      const parsed = parseEpisode(title);
+      const quality = getQuality(title);
+
+      if (!parsed || !quality) return;
+
+      publications.push({
+        ...parsed,
+        id: parsed.episodeKey,
+        title,
+        quality: quality.label,
+        qualityRank: quality.rank,
+        publishedAt: null,
+        sourceUrl,
+        clicknuploadUrl: null
+      });
+    });
+
+    console.log(
+      `Archives page ${pageNumber}: ${publications.length} épisodes`
+    );
+
+    return publications;
+
+  } catch (error) {
+    console.error(
+      `Archive error page ${pageNumber}:`,
+      error.message
+    );
+
+    return [];
+  }
+}
+
+export async function getArchiveHistory(pageCount = 5) {
+  const results = [];
+
+  for (let page = 1; page <= pageCount; page++) {
+    const publications = await getArchivePublications(page);
+
+    results.push(...publications);
+  }
+
+  // Élimination des doublons.
+  const unique = new Map();
+
+  for (const item of results) {
+    const previous = unique.get(item.episodeKey);
+
+    if (
+      !previous ||
+      item.qualityRank < previous.qualityRank
+    ) {
+      unique.set(item.episodeKey, item);
+    }
+  }
+
+  return [...unique.values()];
+}
+
 function normalize(value) {
   return value
     .toLowerCase()
