@@ -11,9 +11,16 @@ const EMPTY_STATE = {
 };
 
 async function readState() {
-  return (
-    await store.get("state", { type: "json" })
-  ) || EMPTY_STATE;
+  const saved = await store.get("state", {
+    type: "json"
+  });
+
+  return {
+    ...EMPTY_STATE,
+    ...(saved || {}),
+    followed: saved?.followed || [],
+    newItems: saved?.newItems || []
+  };
 }
 
 async function saveState(state) {
@@ -30,59 +37,136 @@ function json(data, status = 200) {
   });
 }
 
+function groupBySeries(episodes) {
+  const groups = new Map();
+
+  for (const episode of episodes) {
+    let series = groups.get(episode.seriesId);
+
+    if (!series) {
+      series = {
+        id: episode.seriesId,
+        title: episode.seriesTitle,
+        followedAt: null,
+        seasons: []
+      };
+
+      groups.set(episode.seriesId, series);
+    }
+
+    let season = series.seasons.find(
+      item => item.number === episode.season
+    );
+
+    if (!season) {
+      season = {
+        number: episode.season,
+        episodes: []
+      };
+
+      series.seasons.push(season);
+    }
+
+    season.episodes.push(episode);
+  }
+
+  return [...groups.values()].map(series => ({
+    ...series,
+    seasons: series.seasons
+      .sort((a, b) => a.number - b.number)
+      .map(season => ({
+        ...season,
+        episodes: season.episodes.sort(
+          (a, b) => a.episode - b.episode
+        )
+      }))
+  }));
+}
+
+function mergeSeries(oldSeries, newSeries) {
+  const merged = new Map();
+
+  for (const season of oldSeries.seasons || []) {
+    for (const episode of season.episodes || []) {
+      merged.set(episode.episodeKey, episode);
+    }
+  }
+
+  for (const season of newSeries.seasons || []) {
+    for (const episode of season.episodes || []) {
+      const previous = merged.get(episode.episodeKey);
+
+      // Conserve la meilleure version connue.
+      if (
+        !previous ||
+        (episode.qualityRank || 99) <=
+          (previous.qualityRank || 99)
+      ) {
+        merged.set(episode.episodeKey, episode);
+      }
+    }
+  }
+
+  return {
+    ...oldSeries,
+    title: newSeries.title || oldSeries.title,
+    seasons: groupBySeries(
+      [...merged.values()]
+    ).flatMap(series => series.seasons),
+    followedAt: oldSeries.followedAt
+  };
+}
+
 export default async function handler(request) {
   try {
     const url = new URL(request.url);
     const action = url.searchParams.get("action");
 
-    // 1. Lecture du catalogue
-    if (request.method === "GET" && action === "state") {
+    if (
+      request.method === "GET" &&
+      action === "state"
+    ) {
       return json(await readState());
     }
 
     if (request.method !== "POST") {
-      return json({ error: "Méthode non autorisée" }, 405);
+      return json({
+        error: "Méthode non autorisée"
+      }, 405);
     }
 
     const state = await readState();
 
-    // 2. Actualisation du flux XML
+    // REFRESH
     if (action === "refresh") {
-      console.log("VideoTracker: démarrage du parsing");
-
       const publications = await getPublications();
+      const discovered = groupBySeries(publications);
 
-      console.log(
-        `VideoTracker: ${publications.length} publications trouvées`
+      const followedMap = new Map(
+        state.followed.map(series => [
+          series.id,
+          series
+        ])
       );
 
-      const followedKeys = new Set(
-        state.followed.map(item => item.contentKey)
-      );
+      const newSeries = [];
 
-      // Actualise les informations des vidéos suivies
-      const updatedFollowed = state.followed.map(old => {
-        const updated = publications.find(
-          item => item.contentKey === old.contentKey
-        );
+      for (const series of discovered) {
+        const existing = followedMap.get(series.id);
 
-        return updated
-          ? {
-              ...old,
-              ...updated,
-              followedAt: old.followedAt
-            }
-          : old;
-      });
-
-      // Évite de proposer les vidéos déjà cataloguées
-      const newItems = publications.filter(
-        item => !followedKeys.has(item.contentKey)
-      );
+        if (existing) {
+          followedMap.set(
+            series.id,
+            mergeSeries(existing, series)
+          );
+        } else {
+          newSeries.push(series);
+        }
+      }
 
       const updatedState = {
-        followed: updatedFollowed,
-        newItems,
+        followed: [...followedMap.values()],
+        newItems: newSeries,
         lastRefresh: new Date().toISOString()
       };
 
@@ -91,34 +175,39 @@ export default async function handler(request) {
       return json(updatedState);
     }
 
-    // 3. Ajout au catalogue
-    if (action === "follow") {
-      const body = await request.json();
-      const { id } = body;
+    const body = await request.json();
 
-      const item = state.newItems.find(
-        entry => entry.id === id
+    // FOLLOW : ajouter une série complète
+    if (action === "follow") {
+      const series = state.newItems.find(
+        item => item.id === body.seriesId
       );
 
-      if (!item) {
+      if (!series) {
         return json({
-          error: "Publication introuvable"
+          error: "Série introuvable"
         }, 404);
       }
 
-      const alreadyFollowed = state.followed.some(
-        entry => entry.contentKey === item.contentKey
+      const existing = state.followed.find(
+        item => item.id === series.id
       );
 
-      if (!alreadyFollowed) {
+      if (existing) {
+        state.followed = state.followed.map(
+          item => item.id === series.id
+            ? mergeSeries(item, series)
+            : item
+        );
+      } else {
         state.followed.push({
-          ...item,
+          ...series,
           followedAt: new Date().toISOString()
         });
       }
 
       state.newItems = state.newItems.filter(
-        entry => entry.contentKey !== item.contentKey
+        item => item.id !== series.id
       );
 
       await saveState(state);
@@ -126,13 +215,10 @@ export default async function handler(request) {
       return json(state);
     }
 
-    // 4. Suppression du catalogue
+    // UNFOLLOW : retirer une série complète
     if (action === "unfollow") {
-      const body = await request.json();
-      const { contentKey } = body;
-
       state.followed = state.followed.filter(
-        item => item.contentKey !== contentKey
+        item => item.id !== body.seriesId
       );
 
       await saveState(state);
@@ -146,7 +232,7 @@ export default async function handler(request) {
     }, 404);
 
   } catch (error) {
-    console.error("VideoTracker API error:", error);
+    console.error("VideoTracker API:", error);
 
     return json({
       error: error.message || "Erreur serveur"
