@@ -1,4 +1,3 @@
-
 import { getStore } from "@netlify/blobs";
 import { getPublications } from "./scraper.mjs";
 
