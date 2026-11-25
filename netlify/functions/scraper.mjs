@@ -106,6 +106,7 @@ function isAllowedPublicationUrl(value) {
   }
 }
 
+
 async function getClicknuploadLink(pageUrl) {
   if (!isAllowedPublicationUrl(pageUrl)) {
     return null;
@@ -116,40 +117,60 @@ async function getClicknuploadLink(pageUrl) {
       headers: {
         "User-Agent": "VideoTracker/1.0"
       },
-      signal: AbortSignal.timeout(12000)
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000)
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error("Publication HTTP error:", response.status);
+      return null;
+    }
 
     const html = await response.text();
     const $ = cheerio.load(html);
 
     let result = null;
 
-    $("a[href]").each((_, element) => {
-      if (result) return;
+    // Recherche du bloc ClicknUpload.
+    $("h4.links").each((_, heading) => {
+      const label = $(heading).text().trim();
 
-      const href = $(element).attr("href");
-      if (!href) return;
-
-      try {
-        const url = new URL(href, pageUrl);
-
-        if (
-          url.protocol === "https:" &&
-          /(^|\.)clicknupload\./i.test(url.hostname)
-        ) {
-          result = url.href;
-        }
-      } catch {
-        // Ignore invalid URLs
+      if (!/click\s*n\s*upload/i.test(label)) {
+        return;
       }
+
+      const container = $(heading).closest("div");
+
+      container.find("a[href]").each((_, element) => {
+        const href = $(element).attr("href");
+
+        if (!href) return;
+
+        try {
+          const url = new URL(href, pageUrl);
+
+          if (
+            url.protocol === "https:" &&
+            /(^|\.)clicknupload\./i.test(url.hostname)
+          ) {
+            result = url.href;
+          }
+        } catch {
+          // URL invalide
+        }
+      });
     });
 
+    console.log(
+      "ClicknUpload:",
+      result ? "Lien trouvé" : "Aucun lien trouvé"
+    );
+
     return result;
+
   } catch (error) {
     console.error(
-      "Publication page error:",
+      "ClicknUpload extraction error:",
       error.message
     );
 
