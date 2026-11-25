@@ -9,23 +9,43 @@ import {
   Trash2,
   Clock,
   CheckCircle2,
-  Inbox
+  Inbox,
+  ChevronDown,
+  ChevronRight,
+  Tv
 } from "lucide-react";
 
-type Video = {
+type Episode = {
   id: string;
+  episodeKey: string;
+  seriesId: string;
+  seriesTitle: string;
+  season: number;
+  episode: number;
+  episodeTitle: string;
   title: string;
-  contentKey: string;
-  qualityLabel: string;
+  quality: string;
+  qualityRank: number;
   publishedAt: string | null;
   sourceUrl: string;
   clicknuploadUrl: string | null;
-  followedAt?: string;
+};
+
+type Season = {
+  number: number;
+  episodes: Episode[];
+};
+
+type Series = {
+  id: string;
+  title: string;
+  followedAt: string | null;
+  seasons: Season[];
 };
 
 type State = {
-  followed: Video[];
-  newItems: Video[];
+  followed: Series[];
+  newItems: Series[];
   lastRefresh: string | null;
 };
 
@@ -34,7 +54,6 @@ const emptyState: State = {
   newItems: [],
   lastRefresh: null
 };
-
 
 async function api(action: string, data?: object) {
   const isRead = action === "state";
@@ -58,7 +77,7 @@ async function api(action: string, data?: object) {
     result = JSON.parse(text);
   } catch {
     throw new Error(
-      `Réponse serveur invalide (${response.status}): ${text.slice(0, 150)}`
+      `Réponse invalide (${response.status}): ${text.slice(0, 150)}`
     );
   }
 
@@ -66,21 +85,43 @@ async function api(action: string, data?: object) {
     throw new Error(result.error || "Erreur API");
   }
 
-  return result;
+  return result as State;
 }
 
+function episodeCount(series: Series) {
+  return series.seasons.reduce(
+    (total, season) => total + season.episodes.length,
+    0
+  );
+}
+
+function formatDate(date: string | null) {
+  if (!date) return "";
+
+  const parsed = new Date(date);
+
+  return Number.isNaN(parsed.getTime())
+    ? ""
+    : parsed.toLocaleDateString("fr-FR");
+}
 
 export default function App() {
   const [state, setState] = useState<State>(emptyState);
   const [tab, setTab] = useState<"new" | "followed">("new");
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState<string[]>([]);
 
   async function loadState() {
     try {
       setState(await api("state"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setError(
+        e instanceof Error ? e.message : "Erreur de chargement"
+      );
+    } finally {
+      setInitialLoading(false);
     }
   }
 
@@ -89,29 +130,50 @@ export default function App() {
     setError("");
 
     try {
-      const result = await api("refresh");
-      setState(result);
+      setState(await api("refresh"));
+      setExpanded([]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setError(
+        e instanceof Error ? e.message : "Erreur Refresh"
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function follow(id: string) {
+  async function follow(seriesId: string) {
     try {
-      setState(await api("follow", { id }));
+      setState(await api("follow", { seriesId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setError(
+        e instanceof Error ? e.message : "Erreur"
+      );
     }
   }
 
-  async function unfollow(contentKey: string) {
-    try {
-      setState(await api("unfollow", { contentKey }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+  async function unfollow(seriesId: string) {
+    if (!window.confirm("Retirer cette série du catalogue ?")) {
+      return;
     }
+
+    try {
+      setState(await api("unfollow", { seriesId }));
+      setExpanded(current =>
+        current.filter(id => id !== seriesId)
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Erreur"
+      );
+    }
+  }
+
+  function toggleSeries(id: string) {
+    setExpanded(current =>
+      current.includes(id)
+        ? current.filter(item => item !== id)
+        : [...current, id]
+    );
   }
 
   useEffect(() => {
@@ -129,6 +191,7 @@ export default function App() {
           <div className="brand-icon">
             <Film size={25} />
           </div>
+
           <div>
             <h1>VideoTracker</h1>
             <p>Mon catalogue personnel</p>
@@ -144,7 +207,9 @@ export default function App() {
             size={18}
             className={loading ? "spin" : ""}
           />
-          <span>{loading ? "Analyse..." : "Refresh"}</span>
+          <span>
+            {loading ? "Analyse..." : "Refresh"}
+          </span>
         </button>
       </header>
 
@@ -152,13 +217,13 @@ export default function App() {
         <div className="stat-card">
           <Inbox />
           <strong>{state.newItems.length}</strong>
-          <span>Nouveaux</span>
+          <span>Nouvelles séries</span>
         </div>
 
         <div className="stat-card">
           <BookmarkCheck />
           <strong>{state.followed.length}</strong>
-          <span>Suivis</span>
+          <span>Séries suivies</span>
         </div>
       </section>
 
@@ -193,94 +258,171 @@ export default function App() {
       )}
 
       <section className="video-list">
-        {items.map(item => (
-          <article className="video-card" key={item.id}>
-            <div className="video-icon">
-              <Film size={25} />
-            </div>
-
-            <div className="video-content">
-              <h2>{item.title}</h2>
-
-              <div className="video-meta">
-                <span className="quality">
-                  {item.qualityLabel}
-                </span>
-
-                {item.publishedAt && (
-                  <span>
-                    {new Date(item.publishedAt)
-                      .toLocaleDateString("fr-FR")}
-                  </span>
-                )}
-              </div>
-
-              <div className="video-actions">
-                {item.clicknuploadUrl ? (
-                  <a
-                    className="download-link"
-                    href={item.clicknuploadUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink size={16} />
-                    Clicknupload
-                  </a>
-                ) : (
-                  <a
-                    className="source-link"
-                    href={item.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink size={16} />
-                    Voir la publication
-                  </a>
-                )}
-
-                {tab === "new" ? (
-                  <button
-                    className="follow-button"
-                    onClick={() => follow(item.id)}
-                  >
-                    <Bookmark size={16} />
-                    Ajouter
-                  </button>
-                ) : (
-                  <button
-                    className="remove-button"
-                    onClick={() => unfollow(item.contentKey)}
-                    aria-label="Retirer du catalogue"
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                )}
-              </div>
-
-              {tab === "followed" && (
-                <div className="followed-label">
-                  <CheckCircle2 size={14} />
-                  Dans mon catalogue
-                </div>
-              )}
-            </div>
-          </article>
-        ))}
-
-        {items.length === 0 && (
+        {initialLoading ? (
           <div className="empty">
-            <Film size={42} />
-            <h2>
-              {tab === "new"
-                ? "Aucune nouvelle publication"
-                : "Ton catalogue est vide"}
-            </h2>
-            <p>
-              {tab === "new"
-                ? "Appuie sur Refresh pour rechercher les nouveautés."
-                : "Ajoute des publications depuis l'onglet Nouveaux."}
-            </p>
+            <RefreshCw className="spin" size={32} />
+            <h2>Chargement du catalogue...</h2>
           </div>
+        ) : (
+          <>
+            {items.map(series => {
+              const isExpanded = expanded.includes(series.id);
+              const count = episodeCount(series);
+
+              return (
+                <article
+                  className="video-card series-card"
+                  key={series.id}
+                >
+                  <button
+                    className="video-icon series-toggle"
+                    onClick={() => toggleSeries(series.id)}
+                    aria-label="Afficher les épisodes"
+                  >
+                    <Tv size={25} />
+                  </button>
+
+                  <div className="video-content">
+                    <div
+                      className="series-heading"
+                      onClick={() => toggleSeries(series.id)}
+                    >
+                      <div>
+                        <h2>{series.title}</h2>
+
+                        <div className="video-meta">
+                          <span>
+                            {count} épisode{count > 1 ? "s" : ""}
+                          </span>
+                          <span>
+                            {series.seasons.length} saison
+                            {series.seasons.length > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+
+                      {isExpanded
+                        ? <ChevronDown size={21} />
+                        : <ChevronRight size={21} />
+                      }
+                    </div>
+
+                    <div className="video-actions">
+                      {tab === "new" ? (
+                        <button
+                          className="follow-button"
+                          onClick={() => follow(series.id)}
+                        >
+                          <Bookmark size={16} />
+                          Suivre cette série
+                        </button>
+                      ) : (
+                        <button
+                          className="remove-button"
+                          onClick={() => unfollow(series.id)}
+                          aria-label="Retirer cette série"
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      )}
+                    </div>
+
+                    {tab === "followed" && (
+                      <div className="followed-label">
+                        <CheckCircle2 size={14} />
+                        Dans mon catalogue
+                      </div>
+                    )}
+
+                    {isExpanded && (
+                      <div className="season-list">
+                        {series.seasons.map(season => (
+                          <div
+                            className="season"
+                            key={season.number}
+                          >
+                            <h3>
+                              Saison {season.number}
+                            </h3>
+
+                            {season.episodes.map(episode => (
+                              <div
+                                className="episode"
+                                key={episode.episodeKey}
+                              >
+                                <div className="episode-info">
+                                  <strong>
+                                    S{String(season.number).padStart(2, "0")}
+                                    E{String(episode.episode).padStart(2, "0")}
+                                  </strong>
+
+                                  <span>
+                                    {episode.episodeTitle}
+                                  </span>
+
+                                  <div className="video-meta">
+                                    <span className="quality">
+                                      {episode.quality}
+                                    </span>
+
+                                    {episode.publishedAt && (
+                                      <span>
+                                        {formatDate(episode.publishedAt)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {episode.clicknuploadUrl ? (
+                                  <a
+                                    className="download-link"
+                                    href={episode.clicknuploadUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <ExternalLink size={15} />
+                                    Télécharger
+                                  </a>
+                                ) : (
+                                  <a
+                                    className="source-link"
+                                    href={episode.sourceUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <ExternalLink size={15} />
+                                    Publication
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+
+            {items.length === 0 && (
+              <div className="empty">
+                <Film size={42} />
+
+                <h2>
+                  {tab === "new"
+                    ? "Aucune nouvelle série"
+                    : "Ton catalogue est vide"}
+                </h2>
+
+                <p>
+                  {tab === "new"
+                    ? "Appuie sur Refresh pour rechercher les nouveautés."
+                    : "Ajoute des séries depuis l'onglet Nouveaux."}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </section>
 
