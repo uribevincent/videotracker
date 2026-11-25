@@ -252,19 +252,32 @@ async function repairLinks() {
           </div>
         </div>
 
-        <button
-          className="refresh"
-          onClick={refresh}
-          disabled={loading}
-        >
-          <RefreshCw
-            size={18}
-            className={loading ? "spin" : ""}
-          />
-          <span>
-            {loading ? "Analyse..." : "Refresh"}
-          </span>
-        </button>
+      <div className="header-actions">
+  <button
+    className="refresh"
+    onClick={repairLinks}
+    disabled={repairing || loading}
+  >
+    <Wrench size={18} />
+    <span>
+      {repairing ? "Réparation..." : "Réparer les liens"}
+    </span>
+  </button>
+
+  <button
+    className="refresh"
+    onClick={refresh}
+    disabled={loading || repairing}
+  >
+    <RefreshCw
+      size={18}
+      className={loading ? "spin" : ""}
+    />
+    <span>
+      {loading ? "Analyse..." : "Refresh"}
+    </span>
+  </button>
+</div>
       </header>
 
       <section className="stats">
