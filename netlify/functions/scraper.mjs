@@ -108,83 +108,80 @@ function isAllowedPublicationUrl(value) {
 
 
 
+
 export async function getClicknuploadLink(pageUrl) {
   if (!isAllowedPublicationUrl(pageUrl)) {
+    console.log("URL RMZ refusée:", pageUrl);
     return null;
   }
 
   try {
     const response = await fetch(pageUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; VideoTracker/1.0)",
-        "Accept": "text/html,application/xhtml+xml"
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       },
       redirect: "follow",
       signal: AbortSignal.timeout(20000)
     });
 
-    console.log("Publication status:", response.status);
-    console.log("Publication URL:", response.url);
+    console.log("================================");
+    console.log("RMZ:", pageUrl);
+    console.log("HTTP:", response.status);
+    console.log("URL finale:", response.url);
 
     if (!response.ok) {
-      console.error("Publication HTTP error:", response.status);
+      console.error("Erreur HTTP RMZ:", response.status);
       return null;
     }
 
     const html = await response.text();
+
+    console.log("Taille HTML:", html.length);
+
     const $ = cheerio.load(html);
+
+    console.log(
+      "Titres ClicknUpload:",
+      $("h4.links").filter((_, el =>
+        /click\s*n\s*upload/i.test($(el).text())
+      )).length
+    );
 
     let result = null;
 
-    // Recherche du titre ClicknUpload.
-    $("h4.links").each((_, heading) => {
-      const label = $(heading).text().trim();
+    // Recherche globale des liens ClicknUpload.
+    $("a[href]").each((_, element) => {
+      if (result) return;
 
-      if (!/click\s*n\s*upload/i.test(label)) {
-        return;
-      }
+      const href = $(element).attr("href");
+      if (!href) return;
 
-      // Le pre.links est situé après le h4.
-      const linkBlock = $(heading)
-        .nextAll("pre.links")
-        .first();
+      try {
+        const url = new URL(href, response.url);
 
-      linkBlock.find("a[href]").each((_, element) => {
-        const href = $(element).attr("href");
-
-        if (!href) return;
-
-        try {
-          const url = new URL(href, response.url);
-
-          if (
-            url.protocol === "https:" &&
-            /(^|\.)clicknupload\./i.test(url.hostname)
-          ) {
-            result = url.href;
-          }
-        } catch {
-          // URL invalide
+        if (
+          url.protocol === "https:" &&
+          /(^|\.)clicknupload\./i.test(url.hostname)
+        ) {
+          result = url.href;
         }
-      });
+      } catch {
+        // Ignore les URL invalides.
+      }
     });
 
     console.log(
-      "ClicknUpload result:",
-      result || "NOT FOUND"
+      "RESULTAT CLICKNUpload:",
+      result || "AUCUN LIEN"
     );
 
     if (!result) {
       console.log(
-        "Page title:",
-        $("title").text().trim()
-      );
-
-      console.log(
-        "ClicknUpload headings:",
-        $("h4.links")
-          .map((_, el) => $(el).text().trim())
-          .get()
+        "Titre HTML reçu:",
+        $("title").text()
       );
     }
 
@@ -192,7 +189,7 @@ export async function getClicknuploadLink(pageUrl) {
 
   } catch (error) {
     console.error(
-      "ClicknUpload extraction error:",
+      "ERREUR SCRAPER:",
       error.message
     );
 
