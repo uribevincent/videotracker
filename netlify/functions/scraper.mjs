@@ -107,6 +107,7 @@ function isAllowedPublicationUrl(value) {
 }
 
 
+
 async function getClicknuploadLink(pageUrl) {
   if (!isAllowedPublicationUrl(pageUrl)) {
     return null;
@@ -115,11 +116,15 @@ async function getClicknuploadLink(pageUrl) {
   try {
     const response = await fetch(pageUrl, {
       headers: {
-        "User-Agent": "VideoTracker/1.0"
+        "User-Agent": "Mozilla/5.0 (compatible; VideoTracker/1.0)",
+        "Accept": "text/html,application/xhtml+xml"
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(20000)
     });
+
+    console.log("Publication status:", response.status);
+    console.log("Publication URL:", response.url);
 
     if (!response.ok) {
       console.error("Publication HTTP error:", response.status);
@@ -131,7 +136,7 @@ async function getClicknuploadLink(pageUrl) {
 
     let result = null;
 
-    // Recherche du bloc ClicknUpload.
+    // Recherche du titre ClicknUpload.
     $("h4.links").each((_, heading) => {
       const label = $(heading).text().trim();
 
@@ -139,15 +144,18 @@ async function getClicknuploadLink(pageUrl) {
         return;
       }
 
-      const container = $(heading).closest("div");
+      // Le pre.links est situé après le h4.
+      const linkBlock = $(heading)
+        .nextAll("pre.links")
+        .first();
 
-      container.find("a[href]").each((_, element) => {
+      linkBlock.find("a[href]").each((_, element) => {
         const href = $(element).attr("href");
 
         if (!href) return;
 
         try {
-          const url = new URL(href, pageUrl);
+          const url = new URL(href, response.url);
 
           if (
             url.protocol === "https:" &&
@@ -162,9 +170,23 @@ async function getClicknuploadLink(pageUrl) {
     });
 
     console.log(
-      "ClicknUpload:",
-      result ? "Lien trouvé" : "Aucun lien trouvé"
+      "ClicknUpload result:",
+      result || "NOT FOUND"
     );
+
+    if (!result) {
+      console.log(
+        "Page title:",
+        $("title").text().trim()
+      );
+
+      console.log(
+        "ClicknUpload headings:",
+        $("h4.links")
+          .map((_, el) => $(el).text().trim())
+          .get()
+      );
+    }
 
     return result;
 
@@ -177,6 +199,7 @@ async function getClicknuploadLink(pageUrl) {
     return null;
   }
 }
+
 
 export async function getPublications() {
   const feed = await parser.parseURL(FEED_URL);
