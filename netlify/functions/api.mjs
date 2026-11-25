@@ -1,6 +1,9 @@
 
 import { getStore } from "@netlify/blobs";
-import { getPublications } from "./scraper.mjs";
+import {
+  getPublications,
+  getClicknuploadLink
+} from "./scraper.mjs";
 
 const store = getStore("videotracker");
 
@@ -148,6 +151,86 @@ function mergeSeries(oldSeries, newSeries) {
 }
 
 
+async function repairSeriesLinks(seriesList) {
+  const updated = seriesList.map(series => ({
+    ...series,
+    seasons: (series.seasons || []).map(season => ({
+      ...season,
+      episodes: [...(season.episodes || [])]
+    }))
+  }));
+
+  const tasks = [];
+
+  for (let s = 0; s < updated.length; s++) {
+    for (let se = 0; se < updated[s].seasons.length; se++) {
+      for (
+        let e = 0;
+        e < updated[s].seasons[se].episodes.length;
+        e++
+      ) {
+        const episode =
+          updated[s].seasons[se].episodes[e];
+
+        if (!episode.clicknuploadUrl && episode.sourceUrl) {
+          tasks.push({
+            episode,
+            update(link) {
+              if (link) {
+                updated[s].seasons[se].episodes[e] = {
+                  ...episode,
+                  clicknuploadUrl: link
+                };
+              }
+            }
+          });
+        }
+      }
+    }
+  }
+
+  let repaired = 0;
+  let unavailable = 0;
+
+  // Trois requêtes simultanées maximum.
+  for (let i = 0; i < tasks.length; i += 3) {
+    const batch = tasks.slice(i, i + 3);
+
+    await Promise.all(
+      batch.map(async task => {
+        try {
+          const link = await getClicknuploadLink(
+            task.episode.sourceUrl
+          );
+
+          if (link) {
+            task.update(link);
+            repaired++;
+          } else {
+            unavailable++;
+          }
+        } catch (error) {
+          console.error(
+            "Repair error:",
+            task.episode.title,
+            error.message
+          );
+
+          unavailable++;
+        }
+      })
+    );
+  }
+
+  return {
+    series: updated,
+    attempted: tasks.length,
+    repaired,
+    unavailable
+  };
+}
+
+
 export default async function handler(request) {
   try {
     const url = new URL(request.url);
@@ -207,6 +290,45 @@ export default async function handler(request) {
     }
 
     const body = await request.json();
+
+    // REPAIR LINKS
+    if (action === "repair-links") {
+      console.log("Starting link repair...");
+
+      const followedResult = await repairSeriesLinks(
+        state.followed
+      );
+
+      const newResult = await repairSeriesLinks(
+        state.newItems
+      );
+
+      state.followed = followedResult.series;
+      state.newItems = newResult.series;
+
+      await saveState(state);
+
+      const summary = {
+        attempted:
+          followedResult.attempted +
+          newResult.attempted,
+
+        repaired:
+          followedResult.repaired +
+          newResult.repaired,
+
+        unavailable:
+          followedResult.unavailable +
+          newResult.unavailable
+      };
+
+      console.log("Repair completed:", summary);
+
+      return json({
+        ...state,
+        repairSummary: summary
+      });
+    }
 
     // FOLLOW : ajouter une série complète
     if (action === "follow") {
