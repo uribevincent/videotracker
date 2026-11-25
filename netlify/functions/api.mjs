@@ -83,6 +83,7 @@ function groupBySeries(episodes) {
   }));
 }
 
+
 function mergeSeries(oldSeries, newSeries) {
   const merged = new Map();
 
@@ -96,26 +97,56 @@ function mergeSeries(oldSeries, newSeries) {
     for (const episode of season.episodes || []) {
       const previous = merged.get(episode.episodeKey);
 
-      // Conserve la meilleure version connue.
-      if (
-        !previous ||
-        (episode.qualityRank || 99) <=
-          (previous.qualityRank || 99)
-      ) {
+      if (!previous) {
         merged.set(episode.episodeKey, episode);
+        continue;
       }
+
+      const previousIsBetter =
+        (previous.qualityRank || 99) <
+        (episode.qualityRank || 99);
+
+      const bestVersion = previousIsBetter
+        ? previous
+        : episode;
+
+      merged.set(episode.episodeKey, {
+        ...previous,
+        ...episode,
+
+        // Conserver la meilleure qualité.
+        ...(previousIsBetter ? {
+          title: previous.title,
+          quality: previous.quality,
+          qualityRank: previous.qualityRank,
+          sourceUrl: previous.sourceUrl
+        } : {}),
+
+        // Ne jamais perdre un lien déjà récupéré.
+        clicknuploadUrl:
+          episode.clicknuploadUrl ||
+          previous.clicknuploadUrl ||
+          null,
+
+        episodeTitle:
+          episode.episodeTitle ||
+          previous.episodeTitle
+      });
     }
   }
+
+  const seasons = groupBySeries(
+    [...merged.values()]
+  ).flatMap(series => series.seasons);
 
   return {
     ...oldSeries,
     title: newSeries.title || oldSeries.title,
-    seasons: groupBySeries(
-      [...merged.values()]
-    ).flatMap(series => series.seasons),
+    seasons,
     followedAt: oldSeries.followedAt
   };
 }
+
 
 export default async function handler(request) {
   try {
