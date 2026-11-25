@@ -12,7 +12,8 @@ import {
   Inbox,
   ChevronDown,
   ChevronRight,
-  Tv
+  Tv,
+  Wrench
 } from "lucide-react";
 
 type Episode = {
@@ -117,6 +118,7 @@ export default function App() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
+const [repairing, setRepairing] = useState(false);
 
   async function loadState() {
     try {
@@ -143,7 +145,40 @@ setState({
       setInitialLoading(false);
     }
   }
+async function repairLinks() {
+  setRepairing(true);
+  setError("");
 
+  try {
+    const result = await api("repair-links");
+
+    setState(result);
+
+    const episodes = [
+      ...result.followed,
+      ...result.newItems
+    ].flatMap(series =>
+      (series.seasons || []).flatMap(season =>
+        season.episodes || []
+      )
+    );
+
+    const found = episodes.filter(
+      episode => episode.clicknuploadUrl
+    ).length;
+
+    alert(
+      `Réparation terminée : ${found} liens ClicknUpload trouvés sur ${episodes.length} épisodes.`
+    );
+
+  } catch (e) {
+    setError(
+      e instanceof Error ? e.message : "Erreur de réparation"
+    );
+  } finally {
+    setRepairing(false);
+  }
+}
   async function refresh() {
     setLoading(true);
     setError("");
