@@ -89,8 +89,13 @@ async function api(action: string, data?: object) {
 }
 
 function episodeCount(series: Series) {
+  if (!Array.isArray(series?.seasons)) {
+    return 0;
+  }
+
   return series.seasons.reduce(
-    (total, season) => total + season.episodes.length,
+    (total, season) =>
+      total + (season.episodes?.length || 0),
     0
   );
 }
@@ -115,7 +120,21 @@ export default function App() {
 
   async function loadState() {
     try {
-      setState(await api("state"));
+      const result = await api("state");
+
+setState({
+  followed: Array.isArray(result.followed)
+    ? result.followed.filter(item =>
+        Array.isArray(item.seasons)
+      )
+    : [],
+  newItems: Array.isArray(result.newItems)
+    ? result.newItems.filter(item =>
+        Array.isArray(item.seasons)
+      )
+    : [],
+  lastRefresh: result.lastRefresh || null
+});
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Erreur de chargement"
